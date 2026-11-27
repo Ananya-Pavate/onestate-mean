@@ -1,0 +1,8 @@
+node_modules
+dist
+.angular
+.env
+*.bak
+*.bak2
+_backup_*
+.DS_Store
