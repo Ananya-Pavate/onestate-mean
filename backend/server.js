@@ -260,7 +260,7 @@ app.post('/api/auth/register', wrap(async (req, res) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) throw fail(400, 'Enter a valid email address.');
   const e = pwErrors(pw); if (e.length) throw fail(400, 'Password needs: ' + e.join(', ') + '.');
   if (await User.exists({ email })) throw fail(409, 'An account with this email already exists.');
-  await User.create({ name, email, role: req.body.role === 'owner' ? 'owner' : 'traveller', hash: await bcrypt.hash(pw, 12) });
+  await User.create({ name, email, role: req.body.role === 'owner' ? 'owner' : 'traveller', hash: await bcrypt.hash(pw, 10) });   // cost 10: fast enough for a free server
   console.log(`NEW USER REGISTERED: ${name} <${email}> at ${new Date().toLocaleString()}`); log(email, 'REGISTER', name);
   res.status(201).json({ message: 'Account created. Please log in.' }); }));
 
@@ -272,6 +272,7 @@ const doLogin = adminOnly => wrap(async (req, res) => {
   if (!u || !(await bcrypt.compare(String(req.body.password || ''), u.hash))) {
     f.n++; if (f.n >= 5) { f.until = Date.now() + 15 * 60000; f.n = 0; } fails[email] = f; throw fail(401, 'Invalid email or password.'); }
   delete fails[email]; if (adminOnly && u.role !== 'admin') throw fail(401, 'Invalid email or password.'); log(email, 'LOGIN');
+  try { if (bcrypt.getRounds(u.hash) > 10) { u.hash = await bcrypt.hash(String(req.body.password || ''), 10); await u.save(); } } catch {}   // one-time: make older slow hashes fast
   res.json({ token: jwt.sign({ id: u._id, role: u.role, name: u.name }, SECRET, { expiresIn: '60m' }), name: u.name, role: u.role }); });
 app.post('/api/auth/login', doLogin(false)); app.post('/api/admin/login', doLogin(true));
 
@@ -596,7 +597,7 @@ async function seedExtras() {   // sample stays (demo data), coupons, best-time
       { name: `${d.name} Valley Homestay`, kind: 'Homestay', price: p(0.6), baseRating: 3.9 + (h % 7) / 10, baseCount: 10 + h % 20 },
       { name: `${d.name} Grand Lodge`, kind: 'Hotel', price: p(1), baseRating: 4 + (h % 6) / 10, baseCount: 15 + h % 25 }].map(s => ({ ...s, destination: d._id }))); }
   let demo = await User.findOne({ email: 'owner@onestate.com' });
-  if (!demo) { demo = await User.create({ name: 'Demo Resort Owner', email: 'owner@onestate.com', role: 'owner', hash: await bcrypt.hash('Owner@12345', 12) }); console.log('Demo owner account: owner@onestate.com / Owner@12345'); }
+  if (!demo) { demo = await User.create({ name: 'Demo Resort Owner', email: 'owner@onestate.com', role: 'owner', hash: await bcrypt.hash('Owner@12345', 10) }); console.log('Demo owner account: owner@onestate.com / Owner@12345'); }
   await Stay.updateMany({ owner: { $exists: false } }, { owner: demo._id, rooms: 12 });
   if (!(await Coupon.exists({}))) await Coupon.insertMany([{ code: 'WELCOME10', percent: 10, maxDiscount: 1000, validTill: new Date(Date.now() + 365 * 864e5) }, { code: 'KARNATAKA15', percent: 15, maxDiscount: 2000, validTill: new Date(Date.now() + 365 * 864e5) }]);
 }
@@ -611,7 +612,7 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/onestate').
     await Destination.updateMany({ image: /upload\.wikimedia\.org/ }, { $set: { image: '' } }); await Meta.create({ key: 'img-v2' }); }
   if (!(await User.exists({ role: 'admin' }))) {
     const ae = (process.env.ADMIN_EMAIL || 'admin@onestate.com').toLowerCase();
-    await User.create({ name: 'Admin', email: ae, role: 'admin', hash: await bcrypt.hash(process.env.ADMIN_PASSWORD || 'Admin@12345', 12) });
+    await User.create({ name: 'Admin', email: ae, role: 'admin', hash: await bcrypt.hash(process.env.ADMIN_PASSWORD || 'Admin@12345', 10) });
     console.log(`Admin account created: ${ae} (set ADMIN_EMAIL / ADMIN_PASSWORD to change)`); }
   const PORT = process.env.PORT || 3000; app.listen(PORT, () => { console.log('API on port ' + PORT); backfillImages(); });
 }).catch(e => { console.error('MongoDB connection failed:', e.message); process.exit(1); });
